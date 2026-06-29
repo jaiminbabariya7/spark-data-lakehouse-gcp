@@ -1,0 +1,107 @@
+<svg viewBox="0 0 960 560" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif">
+  <rect width="960" height="560" fill="#0d1117" rx="12"/>
+  <text x="480" y="36" text-anchor="middle" font-size="18" font-weight="bold" fill="#e6edf3">Spark Data Lakehouse — Medallion Architecture on GCP</text>
+
+  <!-- Layer bands -->
+  <rect x="20" y="55" width="140" height="430" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <rect x="175" y="55" width="170" height="430" rx="8" fill="#161b22" stroke="#7d4e00" stroke-width="1.5"/>
+  <rect x="360" y="55" width="170" height="430" rx="8" fill="#161b22" stroke="#1f6feb" stroke-width="1.5"/>
+  <rect x="545" y="55" width="170" height="430" rx="8" fill="#161b22" stroke="#238636" stroke-width="1.5"/>
+  <rect x="730" y="55" width="210" height="430" rx="8" fill="#161b22" stroke="#8957e5" stroke-width="1.5"/>
+
+  <!-- Layer titles -->
+  <text x="90"  y="78" text-anchor="middle" font-size="11" fill="#8b949e" font-weight="bold">SOURCE</text>
+  <text x="260" y="78" text-anchor="middle" font-size="11" fill="#e3b341" font-weight="bold">BRONZE</text>
+  <text x="445" y="78" text-anchor="middle" font-size="11" fill="#58a6ff" font-weight="bold">SILVER</text>
+  <text x="630" y="78" text-anchor="middle" font-size="11" fill="#3fb950" font-weight="bold">GOLD</text>
+  <text x="835" y="78" text-anchor="middle" font-size="11" fill="#bc8cff" font-weight="bold">CONSUMERS</text>
+
+  <!-- Source items -->
+  <rect x="30" y="95" width="120" height="40" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="90" y="118" text-anchor="middle" font-size="10" fill="#58a6ff">GCS Landing Zone</text>
+  <rect x="30" y="148" width="120" height="30" rx="5" fill="#21262d" stroke="#30363d"/>
+  <text x="90" y="167" text-anchor="middle" font-size="10" fill="#8b949e">orders.csv</text>
+  <rect x="30" y="185" width="120" height="30" rx="5" fill="#21262d" stroke="#30363d"/>
+  <text x="90" y="204" text-anchor="middle" font-size="10" fill="#8b949e">customers.csv</text>
+  <rect x="30" y="222" width="120" height="30" rx="5" fill="#21262d" stroke="#30363d"/>
+  <text x="90" y="241" text-anchor="middle" font-size="10" fill="#8b949e">products.csv</text>
+
+  <!-- Bronze boxes -->
+  <rect x="185" y="95" width="150" height="50" rx="6" fill="#21262d" stroke="#7d4e00"/>
+  <text x="260" y="116" text-anchor="middle" font-size="10" fill="#e3b341" font-weight="bold">ingest_raw.py</text>
+  <text x="260" y="132" text-anchor="middle" font-size="9" fill="#8b949e">Schema enforcement + audit cols</text>
+  <rect x="185" y="158" width="150" height="60" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="260" y="178" text-anchor="middle" font-size="10" fill="#e3b341">GCS bronze/orders/</text>
+  <text x="260" y="194" text-anchor="middle" font-size="10" fill="#e3b341">GCS bronze/customers/</text>
+  <text x="260" y="210" text-anchor="middle" font-size="10" fill="#e3b341">GCS bronze/products/</text>
+  <rect x="185" y="232" width="150" height="40" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="260" y="250" text-anchor="middle" font-size="9" fill="#8b949e">Format: Parquet (Snappy)</text>
+  <text x="260" y="265" text-anchor="middle" font-size="9" fill="#8b949e">Partitioned: _batch_date</text>
+
+  <!-- Silver boxes -->
+  <rect x="370" y="95" width="150" height="50" rx="6" fill="#21262d" stroke="#1f6feb"/>
+  <text x="445" y="116" text-anchor="middle" font-size="10" fill="#58a6ff" font-weight="bold">clean_and_validate.py</text>
+  <text x="445" y="132" text-anchor="middle" font-size="9" fill="#8b949e">Dedup + null checks + casting</text>
+  <rect x="370" y="158" width="150" height="60" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="445" y="178" text-anchor="middle" font-size="10" fill="#58a6ff">GCS silver/orders/</text>
+  <text x="445" y="194" text-anchor="middle" font-size="10" fill="#58a6ff">GCS silver/customers/</text>
+  <text x="445" y="210" text-anchor="middle" font-size="10" fill="#58a6ff">GCS silver/products/</text>
+  <rect x="370" y="232" width="150" height="55" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="445" y="250" text-anchor="middle" font-size="9" fill="#8b949e">net_revenue computed</text>
+  <text x="445" y="265" text-anchor="middle" font-size="9" fill="#8b949e">margin_pct computed</text>
+  <text x="445" y="280" text-anchor="middle" font-size="9" fill="#8b949e">SCD-safe deduplication</text>
+
+  <!-- Gold boxes -->
+  <rect x="555" y="95" width="150" height="50" rx="6" fill="#21262d" stroke="#238636"/>
+  <text x="630" y="116" text-anchor="middle" font-size="10" fill="#3fb950" font-weight="bold">build_aggregates.py</text>
+  <text x="630" y="132" text-anchor="middle" font-size="9" fill="#8b949e">3 Gold jobs (parallel)</text>
+  <rect x="555" y="158" width="150" height="30" rx="5" fill="#21262d" stroke="#30363d"/>
+  <text x="630" y="177" text-anchor="middle" font-size="9" fill="#3fb950">daily_revenue_by_channel</text>
+  <rect x="555" y="196" width="150" height="30" rx="5" fill="#21262d" stroke="#30363d"/>
+  <text x="630" y="215" text-anchor="middle" font-size="9" fill="#3fb950">customer_metrics (RFM+LTV)</text>
+  <rect x="555" y="234" width="150" height="30" rx="5" fill="#21262d" stroke="#30363d"/>
+  <text x="630" y="253" text-anchor="middle" font-size="9" fill="#3fb950">product_performance</text>
+  <rect x="555" y="278" width="150" height="40" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="630" y="296" text-anchor="middle" font-size="9" fill="#8b949e">GCS gold/ + BigQuery</text>
+  <text x="630" y="312" text-anchor="middle" font-size="9" fill="#8b949e">direct write (BigQuery connector)</text>
+
+  <!-- Consumers -->
+  <rect x="740" y="95"  width="190" height="35" rx="6" fill="#21262d" stroke="#8957e5"/>
+  <text x="835" y="117" text-anchor="middle" font-size="10" fill="#bc8cff">BigQuery Gold Dataset</text>
+  <rect x="740" y="142" width="190" height="35" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="835" y="164" text-anchor="middle" font-size="10" fill="#8b949e">Looker Studio Dashboards</text>
+  <rect x="740" y="189" width="190" height="35" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="835" y="211" text-anchor="middle" font-size="10" fill="#8b949e">Data Science / ML Teams</text>
+  <rect x="740" y="236" width="190" height="35" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="835" y="258" text-anchor="middle" font-size="10" fill="#8b949e">Vertex AI Feature Store</text>
+
+  <!-- Arrows between layers -->
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#8b949e"/>
+    </marker>
+  </defs>
+  <line x1="150" y1="180" x2="183" y2="180" stroke="#8b949e" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="335" y1="180" x2="368" y2="180" stroke="#8b949e" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="520" y1="210" x2="553" y2="210" stroke="#8b949e" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="705" y1="180" x2="738" y2="180" stroke="#8b949e" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Airflow orchestration bar -->
+  <rect x="20" y="510" width="920" height="38" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="480" y="526" text-anchor="middle" font-size="11" fill="#58a6ff" font-weight="bold">Apache Airflow — spark_lakehouse_pipeline DAG (daily 06:00 UTC)</text>
+  <text x="480" y="542" text-anchor="middle" font-size="10" fill="#8b949e">create_cluster >> bronze_* >> silver_* >> gold_* >> delete_cluster  |  Dataproc ephemeral cluster</text>
+
+  <!-- Compute label -->
+  <rect x="185" y="308" width="150" height="35" rx="6" fill="#21262d" stroke="#d29922"/>
+  <text x="260" y="325" text-anchor="middle" font-size="9" fill="#e3b341">Google Cloud Dataproc</text>
+  <text x="260" y="340" text-anchor="middle" font-size="9" fill="#8b949e">PySpark 3.5 / Spark SQL</text>
+  <rect x="370" y="308" width="150" height="35" rx="6" fill="#21262d" stroke="#d29922"/>
+  <text x="445" y="325" text-anchor="middle" font-size="9" fill="#e3b341">Google Cloud Dataproc</text>
+  <text x="445" y="340" text-anchor="middle" font-size="9" fill="#8b949e">Adaptive Query Execution</text>
+  <rect x="555" y="342" width="150" height="35" rx="6" fill="#21262d" stroke="#d29922"/>
+  <text x="630" y="359" text-anchor="middle" font-size="9" fill="#e3b341">Google Cloud Dataproc</text>
+  <text x="630" y="374" text-anchor="middle" font-size="9" fill="#8b949e">BigQuery Spark Connector</text>
+
+  <!-- IaC label -->
+  <text x="480" y="500" text-anchor="middle" font-size="10" fill="#6e7681">Infrastructure: Terraform | Compute: Dataproc | Storage: GCS | Warehouse: BigQuery | Orchestration: Airflow</text>
+</svg>
