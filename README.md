@@ -1,51 +1,115 @@
-# GCP Dataproc Workflow Templates
+# Spark Data Lakehouse on GCP
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)
-![PySpark](https://img.shields.io/badge/PySpark-Apache%20Spark-E25A1C?logo=apachespark)
-![Dataproc](https://img.shields.io/badge/GCP-Dataproc-4285F4?logo=googlecloud)
-![Cloud Build](https://img.shields.io/badge/Cloud%20Build-CI%2FCD-4285F4?logo=googlecloud)
-![License](https://img.shields.io/badge/License-MIT-green)
+![PySpark](https://img.shields.io/badge/PySpark-3.5-orange?logo=apachespark)
+![Dataproc](https://img.shields.io/badge/Dataproc-GCP-blue?logo=google-cloud)
+![BigQuery](https://img.shields.io/badge/BigQuery-GCP-blue?logo=google-cloud)
+![Airflow](https://img.shields.io/badge/Airflow-2.8-red?logo=apache-airflow)
+![Terraform](https://img.shields.io/badge/Terraform-1.6-purple?logo=terraform)
 
-> Google Cloud Dataproc workflow templates for running managed Spark batch jobs: PySpark word-count reference implementation, Cloud Build CI/CD integration, and cluster lifecycle management.
+Production-grade data lakehouse built on Google Cloud using the Medallion Architecture (Bronze → Silver → Gold). Raw e-commerce data lands in GCS, flows through PySpark cleaning and validation jobs running on Dataproc, and surfaces as business-ready aggregates in BigQuery — all orchestrated by Apache Airflow with ephemeral Dataproc clusters to minimise cost.
 
 ## Architecture
-```
-Source Data (GCS bucket)
-        ↓
-Dataproc Workflow Template
-  ├── Create managed cluster (auto-sized)
-  ├── Submit PySpark job(s)
-  │   └── wordcount.py — MapReduce word frequency
-  ├── Write results to GCS output bucket
-  └── Delete cluster (cost-saving)
-        ↓
-GCS Output (word frequencies as CSV/Parquet)
-        ↓
-[Optional] BigQuery load for further analysis
-```
 
-## Workflow Template Benefits
-- **Ephemeral clusters** — created at job start, deleted on completion → no idle cost
-- **Repeatable** — same template runs in dev, staging, and prod
-- **CI/CD ready** — `cloudbuild.yaml` triggers Dataproc on every push
+![Architecture](snapshots/architecture.svg)
+
+## Medallion Architecture
+
+| Layer | Path | Format | Purpose |
+|---|---|---|---|
+| **Bronze** | `gs://bucket/bronze/` | Parquet (Snappy) | Raw data as-is + audit columns |
+| **Silver** | `gs://bucket/silver/` | Parquet (Snappy) | Cleaned, deduped, validated |
+| **Gold** | `gs://bucket/gold/` + BigQuery | Parquet + BQ tables | Business aggregates, BI-ready |
 
 ## Project Structure
+
 ```
-├── wordcount.py          # PySpark MapReduce word-count job
-├── cloudbuild.yaml       # Cloud Build CI/CD trigger
-└── README.md
+spark-data-lakehouse-gcp/
+├── jobs/
+│   ├── bronze/
+│   │   └── ingest_raw.py           # Schema-enforced ingestion → Bronze Parquet
+│   ├── silver/
+│   │   └── clean_and_validate.py   # Dedup + cleaning + net_revenue
+│   └── gold/
+│       └── build_aggregates.py     # 3 Gold aggregations → GCS + BigQuery
+├── airflow/
+│   └── dags/lakehouse_pipeline_dag.py
+├── terraform/
+│   └── main.tf                     # GCS bucket, BQ dataset, Dataproc, IAM
+├── docker/
+│   └── docker-compose.yml          # Local Spark cluster (3 workers + history)
+├── tests/
+│   ├── test_bronze.py
+│   └── test_silver.py
+├── snapshots/
+│   └── architecture.svg
+├── .env.example
+└── requirements.txt
 ```
 
-## Usage
+## PySpark Jobs
+
+**Bronze — `ingest_raw.py`**
+Reads raw CSV from the GCS landing zone, enforces a strict schema (rejects malformed records into a dead-letter path), and appends audit columns (`_ingested_at`, `_source_file`, `_batch_date`) before writing partitioned Parquet to the Bronze zone.
+
+**Silver — `clean_and_validate.py`**
+Applies data quality rules: drops records missing primary keys or with invalid quantities, deduplicates on primary key keeping the latest ingest, normalises string casing, casts date fields, fills nulls, and computes `net_revenue` and `margin_pct`.
+
+**Gold — `build_aggregates.py`**
+Produces three business aggregations, each writing to GCS Gold Parquet and directly to BigQuery via the Spark–BigQuery connector:
+- `daily_revenue_by_channel` — orders, revenue, AOV, unique customers per day/channel
+- `customer_metrics` — full RFM profile with LTV tier and churn risk per customer
+- `product_performance` — units sold, revenue, gross profit, unique buyers per product
+
+## Airflow DAG
+
+`spark_lakehouse_pipeline` runs daily at 06:00 UTC:
+```
+create_cluster
+    ├── bronze_orders ──► silver_orders ──►
+    ├── bronze_customers ► silver_customers ►──► gold_daily_revenue
+    └── bronze_products ─► silver_products ──►──► gold_customer_metrics
+                                                 └── gold_product_perf
+                                                         └── delete_cluster
+```
+The Dataproc cluster is created at the start of each run and deleted on completion — ephemeral by design.
+
+## Quick Start
+
 ```bash
-# Submit via gcloud
-gcloud dataproc workflow-templates instantiate my-workflow \
-  --region=us-central1 \
-  --parameters=INPUT_PATH=gs://my-bucket/input/,OUTPUT_PATH=gs://my-bucket/output/
+# 1. Clone + install
+git clone https://github.com/jaiminbabariya7/spark-data-lakehouse-gcp.git
+cd spark-data-lakehouse-gcp
+pip install -r requirements.txt
 
-# Or via Cloud Build (triggered on push)
-gcloud builds submit --config cloudbuild.yaml
+# 2. Configure environment
+cp .env.example .env  # Fill in GCP_PROJECT_ID, GCS_LAKEHOUSE_BUCKET
+
+# 3. Provision infrastructure
+cd terraform
+terraform init && terraform apply -var="project_id=$GCP_PROJECT_ID"
+
+# 4. Local development with Docker
+cd docker && docker-compose up -d
+
+# 5. Run tests
+pytest tests/ -v --cov=jobs
+
+# 6. Submit to Dataproc manually
+gcloud dataproc jobs submit pyspark jobs/bronze/ingest_raw.py \
+    --cluster=lakehouse-cluster --region=us-central1 \
+    -- --table=orders
 ```
 
-## Skills Demonstrated
-`PySpark` · `Google Dataproc` · `Apache Spark` · `Cloud Build` · `GCS` · `Batch Processing` · `Workflow Orchestration` · `GCP`
+## Tech Stack
+
+| Component | Technology |
+|---|---|
+| Compute | Google Cloud Dataproc (PySpark 3.5) |
+| Object Storage | Google Cloud Storage (Bronze / Silver / Gold) |
+| Data Warehouse | Google BigQuery (Gold layer) |
+| Orchestration | Apache Airflow 2.8 + Dataproc provider |
+| Infrastructure | Terraform 1.6 |
+| Local Dev | Docker Compose (Bitnami Spark) |
+| Language | Python 3.11 |
+| Testing | pytest + pyspark local mode |
+| Optimisations | Adaptive Query Execution, Parquet Snappy, partitioning |
