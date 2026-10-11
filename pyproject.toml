@@ -1,15 +1,18 @@
 [build-system]
 requires = ["setuptools>=68","wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 [project]
-name = "dataproc-workflow"
+name = "spark-data-lakehouse-gcp"
 version = "1.0.0"
-description = "Dataproc workflow templates for PySpark jobs"
+description = "Medallion lakehouse on GCP: PySpark on ephemeral Dataproc, GCS and BigQuery, orchestrated by Airflow"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [{name="Jaimin Babariya",email="jaiminbabariya7@gmail.com"}]
-keywords = ["python","pyspark","dataproc","gcp"]
+keywords = ["pyspark", "dataproc", "lakehouse", "bigquery", "airflow"]
+[tool.setuptools]
+packages = []
+
 [project.optional-dependencies]
 dev = ["pytest>=7.4","pytest-cov>=4.1","black>=23.0","flake8>=6.1"]
 [tool.black]
