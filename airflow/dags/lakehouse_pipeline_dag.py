@@ -4,7 +4,9 @@ Airflow DAG: Spark Data Lakehouse Pipeline
 Orchestrates the full Medallion Architecture pipeline on Google Cloud Dataproc:
   Bronze  -> Silver -> Gold (GCS + BigQuery)
 
-Schedule: Daily at 06:00 UTC.
+Schedule: Daily at 06:00 UTC. Each run loads the landing folder for its
+logical date ({{ ds }}) into that Bronze partition, so backfills and reruns
+only touch their own day.
 """
 from __future__ import annotations
 import os
@@ -22,12 +24,16 @@ PROJECT_ID  = os.environ["GCP_PROJECT_ID"]
 REGION      = os.getenv("DATAPROC_REGION", "us-central1")
 CLUSTER     = os.getenv("DATAPROC_CLUSTER", "lakehouse-cluster")
 GCS_BUCKET  = os.environ["GCS_LAKEHOUSE_BUCKET"]
-JOBS_BASE   = f"gs://{GCS_BUCKET}/code/jobs"
+BQ_DATASET  = os.getenv("BQ_GOLD_DATASET", "gold")
+SERVICE_ACCOUNT = os.getenv("DATAPROC_SERVICE_ACCOUNT")   # Terraform output
+JOBS_BASE   = f"gs://{GCS_BUCKET}/code/jobs"               # uploaded with `make upload-jobs`
 
 CLUSTER_CONFIG = {
     "master_config": {"num_instances": 1, "machine_type_uri": "n1-standard-4", "disk_config": {"boot_disk_size_gb": 100}},
     "worker_config": {"num_instances": 2, "machine_type_uri": "n1-standard-4", "disk_config": {"boot_disk_size_gb": 100}},
-    "software_config": {"image_version": "2.1-debian11", "properties": {"spark:spark.sql.adaptive.enabled": "true"}},
+    # Dataproc 2.2 = Spark 3.5, with the Spark-BigQuery connector built in
+    "software_config": {"image_version": "2.2-debian12", "properties": {"spark:spark.sql.adaptive.enabled": "true"}},
+    "gce_cluster_config": {"service_account": SERVICE_ACCOUNT} if SERVICE_ACCOUNT else {},
 }
 
 DEFAULT_ARGS = {
@@ -81,19 +87,23 @@ with DAG(
     )
 
     # Bronze jobs (parallel per table)
-    bronze_orders    = pyspark_job("bronze_orders",    "bronze/ingest_raw.py",    ["--table", "orders"])
-    bronze_customers = pyspark_job("bronze_customers", "bronze/ingest_raw.py",    ["--table", "customers"])
-    bronze_products  = pyspark_job("bronze_products",  "bronze/ingest_raw.py",    ["--table", "products"])
+    bucket = ["--bucket", GCS_BUCKET]
+    bronze_args = lambda t: ["--table", t, "--batch_date", "{{ ds }}", *bucket]
+    gold_args   = lambda j: ["--job", j, *bucket, "--project", PROJECT_ID, "--bq_dataset", BQ_DATASET]
+
+    bronze_orders    = pyspark_job("bronze_orders",    "bronze/ingest_raw.py", bronze_args("orders"))
+    bronze_customers = pyspark_job("bronze_customers", "bronze/ingest_raw.py", bronze_args("customers"))
+    bronze_products  = pyspark_job("bronze_products",  "bronze/ingest_raw.py", bronze_args("products"))
 
     # Silver jobs
-    silver_orders    = pyspark_job("silver_orders",    "silver/clean_and_validate.py", ["--table", "orders"])
-    silver_customers = pyspark_job("silver_customers", "silver/clean_and_validate.py", ["--table", "customers"])
-    silver_products  = pyspark_job("silver_products",  "silver/clean_and_validate.py", ["--table", "products"])
+    silver_orders    = pyspark_job("silver_orders",    "silver/clean_and_validate.py", ["--table", "orders", *bucket])
+    silver_customers = pyspark_job("silver_customers", "silver/clean_and_validate.py", ["--table", "customers", *bucket])
+    silver_products  = pyspark_job("silver_products",  "silver/clean_and_validate.py", ["--table", "products", *bucket])
 
     # Gold jobs
-    gold_revenue  = pyspark_job("gold_daily_revenue",     "gold/build_aggregates.py", ["--job", "daily_revenue"])
-    gold_customer = pyspark_job("gold_customer_metrics",  "gold/build_aggregates.py", ["--job", "customer_metrics"])
-    gold_product  = pyspark_job("gold_product_perf",      "gold/build_aggregates.py", ["--job", "product_performance"])
+    gold_revenue  = pyspark_job("gold_daily_revenue",    "gold/build_aggregates.py", gold_args("daily_revenue"))
+    gold_customer = pyspark_job("gold_customer_metrics", "gold/build_aggregates.py", gold_args("customer_metrics"))
+    gold_product  = pyspark_job("gold_product_perf",     "gold/build_aggregates.py", gold_args("product_performance"))
 
     # Pipeline topology
     start >> create_cluster

@@ -1,14 +1,15 @@
 """
 Silver Layer: Clean and Validate Job
 
-Reads raw Parquet from the Bronze layer, applies data quality checks,
-cleanses and normalises fields, deduplicates records, and writes
-clean Parquet to the Silver layer.
+Reads the full Bronze history for a table, applies data quality checks,
+cleanses and normalises fields, deduplicates records, and rebuilds the
+Silver table as the current, clean state of each entity (a full snapshot,
+so reruns are idempotent).
 
 Data quality rules enforced:
   - Drop records missing primary key
   - Drop records with quantity <= 0 or unit_price <= 0
-  - Deduplicate on primary key (keep latest _ingested_at)
+  - Deduplicate on primary key across all Bronze batches (keep latest _batch_date / _ingested_at)
   - Normalise string casing and trim whitespace
   - Cast date strings to proper date types
   - Compute net_revenue = quantity * unit_price * (1 - discount_pct)
@@ -20,9 +21,6 @@ from pyspark.sql import functions as F
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("silver.clean")
-
-GCS_BUCKET = os.environ["GCS_LAKEHOUSE_BUCKET"]
-
 
 def get_spark(app_name: str) -> SparkSession:
     return (
@@ -36,7 +34,7 @@ def get_spark(app_name: str) -> SparkSession:
 
 def deduplicate(df: DataFrame, pk: str) -> DataFrame:
     """Keep the most recently ingested record per primary key."""
-    w = Window.partitionBy(pk).orderBy(F.desc("_ingested_at"))
+    w = Window.partitionBy(pk).orderBy(F.desc("_batch_date"), F.desc("_ingested_at"))
     return (
         df
         .withColumn("_row_num", F.row_number().over(w))
@@ -106,9 +104,9 @@ CLEANERS = {
 }
 
 
-def process(spark: SparkSession, table: str) -> int:
-    bronze_path = f"gs://{GCS_BUCKET}/bronze/{table}/"
-    silver_path = f"gs://{GCS_BUCKET}/silver/{table}/"
+def process(spark: SparkSession, table: str, bucket: str) -> int:
+    bronze_path = f"gs://{bucket}/bronze/{table}/"
+    silver_path = f"gs://{bucket}/silver/{table}/"
     cleaner_fn, pk = CLEANERS[table]
 
     logger.info("Reading Bronze: %s", bronze_path)
@@ -120,21 +118,20 @@ def process(spark: SparkSession, table: str) -> int:
     count = deduped.count()
     logger.info("Writing %d clean records to Silver: %s", count, silver_path)
 
-    (
-        deduped.write
-        .mode("overwrite")
-        .partitionBy("_batch_date")
-        .parquet(silver_path)
-    )
+    # Full snapshot of current state: replace the whole Silver table
+    deduped.write.mode("overwrite").parquet(silver_path)
     return count
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--table", required=True, choices=list(CLEANERS))
+    parser.add_argument("--bucket", default=os.getenv("GCS_LAKEHOUSE_BUCKET"))
     args = parser.parse_args()
+    if not args.bucket:
+        parser.error("--bucket or GCS_LAKEHOUSE_BUCKET is required")
 
     spark = get_spark(f"silver_clean_{args.table}")
-    count = process(spark, args.table)
+    count = process(spark, args.table, args.bucket)
     logger.info("Silver complete: %d records for %s", count, args.table)
     spark.stop()

@@ -16,8 +16,10 @@ Data lakehouse built on Google Cloud using the Medallion Architecture (Bronze �
 
 | Layer | Path | Format | Purpose |
 |---|---|---|---|
-| **Bronze** | `gs://bucket/bronze/` | Parquet (Snappy) | Raw data as-is + audit columns |
-| **Silver** | `gs://bucket/silver/` | Parquet (Snappy) | Cleaned, deduped, validated |
+| **Landing** | `gs://bucket/landing/<table>/<YYYY-MM-DD>/` | CSV | One folder per daily drop |
+| **Bronze** | `gs://bucket/bronze/` | Parquet (Snappy), partitioned by `_batch_date` | Raw data as-is + audit columns, full history |
+| **Dead letter** | `gs://bucket/dead_letter/` | Parquet, partitioned by `_batch_date` | Rows that failed the schema, with the raw line and source file |
+| **Silver** | `gs://bucket/silver/` | Parquet (Snappy) | Cleaned, deduped current state (rebuilt each run) |
 | **Gold** | `gs://bucket/gold/` + BigQuery | Parquet + BQ tables | Business aggregates, BI-ready |
 
 ## Project Structure
@@ -34,12 +36,14 @@ spark-data-lakehouse-gcp/
 ├── airflow/
 │   └── dags/lakehouse_pipeline_dag.py
 ├── terraform/
-│   └── main.tf                     # GCS bucket, BQ dataset, Dataproc, IAM
+│   └── main.tf                     # GCS bucket, BQ dataset, Dataproc service account + IAM
 ├── docker/
-│   └── docker-compose.yml          # Local Spark cluster (3 workers + history)
-├── tests/
+│   └── docker-compose.yml          # Local Spark cluster (master + 2 workers + history server)
+├── tests/                          # pytest on local Spark, calling the job functions directly
+│   ├── conftest.py
 │   ├── test_bronze.py
-│   └── test_silver.py
+│   ├── test_silver.py
+│   └── test_gold.py
 ├── snapshots/
 │   └── architecture.svg
 ├── .env.example
@@ -49,10 +53,10 @@ spark-data-lakehouse-gcp/
 ## PySpark Jobs
 
 **Bronze — `ingest_raw.py`**
-Reads raw CSV from the GCS landing zone, enforces a strict schema (rejects malformed records into a dead-letter path), and appends audit columns (`_ingested_at`, `_source_file`, `_batch_date`) before writing partitioned Parquet to the Bronze zone.
+Reads one day's CSV files from `landing/<table>/<batch_date>/` with a strict schema. Rows whose values don't fit the schema are captured with Spark's corrupt-record column and written to the dead-letter path with the raw line and source file, instead of becoming silent nulls. Valid rows get audit columns (`_ingested_at`, `_source_file`, `_batch_date`) and are written as Parquet partitioned by `_batch_date` with **dynamic partition overwrite**, so a run replaces only its own day: Bronze keeps full history and reruns or backfills are idempotent.
 
 **Silver — `clean_and_validate.py`**
-Applies data quality rules: drops records missing primary keys or with invalid quantities, deduplicates on primary key keeping the latest ingest, normalises string casing, casts date fields, fills nulls, and computes `net_revenue` and `margin_pct`.
+Reads the full Bronze history, applies data quality rules (drops records missing primary keys or with invalid quantities or prices), deduplicates on primary key keeping the record from the latest batch (so a later correction wins), normalises string casing, casts date fields, fills nulls, and computes `net_revenue` and `margin_pct`. Silver is rebuilt as a full snapshot of current state each run.
 
 **Gold — `build_aggregates.py`**
 Produces three business aggregations, each writing to GCS Gold Parquet and directly to BigQuery via the Spark–BigQuery connector:
@@ -83,28 +87,32 @@ pip install -r requirements.txt
 
 # 2. Configure environment
 cp .env.example .env  # Fill in GCP_PROJECT_ID, GCS_LAKEHOUSE_BUCKET
+set -a; . ./.env; set +a
 
-# 3. Provision infrastructure
-cd terraform
-terraform init && terraform apply -var="project_id=$GCP_PROJECT_ID"
+# 3. Provision infrastructure (bucket, BigQuery dataset, Dataproc service account)
+(cd terraform && terraform init && terraform apply -var="project_id=$GCP_PROJECT_ID")
 
-# 4. Local development with Docker
-cd docker && docker-compose up -d
+# 4. Upload the job code the DAG runs, and drop a day's files into landing/
+make upload-jobs
+gsutil cp orders.csv gs://$GCS_LAKEHOUSE_BUCKET/landing/orders/2024-01-15/
 
-# 5. Run tests
+# 5. Run tests (local Spark; needs Java 17)
 pytest tests/ -v --cov=jobs
 
-# 6. Submit to Dataproc manually
+# 6. Optional: local Spark cluster (master + 2 workers + history server)
+docker compose -f docker/docker-compose.yml up -d
+
+# 7. Submit one job to Dataproc manually
 gcloud dataproc jobs submit pyspark jobs/bronze/ingest_raw.py \
     --cluster=lakehouse-cluster --region=us-central1 \
-    -- --table=orders
+    -- --table=orders --batch_date=2024-01-15 --bucket=$GCS_LAKEHOUSE_BUCKET
 ```
 
 ## Tech Stack
 
 | Component | Technology |
 |---|---|
-| Compute | Google Cloud Dataproc (PySpark 3.5) |
+| Compute | Google Cloud Dataproc 2.2 (Spark 3.5) |
 | Object Storage | Google Cloud Storage (Bronze / Silver / Gold) |
 | Data Warehouse | Google BigQuery (Gold layer) |
 | Orchestration | Apache Airflow 2.8 + Dataproc provider |
@@ -112,4 +120,4 @@ gcloud dataproc jobs submit pyspark jobs/bronze/ingest_raw.py \
 | Local Dev | Docker Compose (Bitnami Spark) |
 | Language | Python 3.11 |
 | Testing | pytest + pyspark local mode |
-| Optimisations | Adaptive Query Execution, Parquet Snappy, partitioning |
+| Optimisations | Adaptive Query Execution, Parquet Snappy, dynamic partition overwrite |

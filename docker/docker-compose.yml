@@ -40,8 +40,10 @@ services:
 
   spark-history:
     image: bitnami/spark:3.5
-    command: /opt/bitnami/spark/sbin/start-history-server.sh
+    # run in the foreground so the container stays up; create the log dir first
+    command: bash -c "mkdir -p /opt/spark-data/event-logs && /opt/bitnami/spark/sbin/start-history-server.sh"
     environment:
+      - SPARK_NO_DAEMONIZE=true
       - SPARK_HISTORY_OPTS=-Dspark.history.fs.logDirectory=/opt/spark-data/event-logs
     ports:
       - "18080:18080"

@@ -1,4 +1,4 @@
-.PHONY: install install-dev lint format test clean
+.PHONY: install install-dev lint format test upload-jobs clean
 install:
 	pip install -r requirements.txt
 install-dev: install
@@ -9,7 +9,9 @@ lint:
 format:
 	black --line-length 100 .
 test:
-	pytest tests/ -v --cov=. --cov-report=term-missing
+	pytest tests/ -v --cov=jobs --cov-report=term-missing
+upload-jobs:
+	gsutil -m cp -r jobs gs://$(GCS_LAKEHOUSE_BUCKET)/code/
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	rm -rf .coverage htmlcov/ .pytest_cache/
