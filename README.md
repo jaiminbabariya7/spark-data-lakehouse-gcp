@@ -6,7 +6,7 @@
 ![Airflow](https://img.shields.io/badge/Airflow-2.8-red?logo=apache-airflow)
 ![Terraform](https://img.shields.io/badge/Terraform-1.6-purple?logo=terraform)
 
-Production-grade data lakehouse built on Google Cloud using the Medallion Architecture (Bronze → Silver → Gold). Raw e-commerce data lands in GCS, flows through PySpark cleaning and validation jobs running on Dataproc, and surfaces as business-ready aggregates in BigQuery — all orchestrated by Apache Airflow with ephemeral Dataproc clusters to minimise cost.
+Data lakehouse built on Google Cloud using the Medallion Architecture (Bronze → Silver → Gold). Raw e-commerce data lands in GCS, flows through PySpark cleaning and validation jobs running on Dataproc, and surfaces as business-ready aggregates in BigQuery — all orchestrated by Apache Airflow with ephemeral Dataproc clusters to minimise cost.
 
 ## Architecture
 
